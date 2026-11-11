@@ -18,6 +18,7 @@ dotfiles checkout
 ```
 mkdir -p .dotfiles-backup && dotfiles checkout 2>&1 | egrep "\s+\." | awk {'print $1'} | xargs -I{} mv {} .dotfiles-backup/{}
 ```
+Sometimes files in deeper folders need to be removed 
 2. rerun the checkout
 ```
 dotfiles checkout
