@@ -24,7 +24,8 @@ dotfiles checkout
 ```
 ## How to update the repo
 The repo uses the alias dotfiles for the bare git repo. Use it in place of git to update the repo like normmal. For example
-``` dotfiles add <new file> 
-    dotfiles commit -m "Added <new file>"
-    dotfiles push
+``` 
+dotfiles add <new file> 
+dotfiles commit -m "Added <new file>"
+dotfiles push
 ```
