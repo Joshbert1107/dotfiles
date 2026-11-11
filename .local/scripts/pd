@@ -1,0 +1,84 @@
+#!/bin/bash
+
+this_path=$(dirname "$(realpath "$0")")
+
+. "$this_path/install_script.sh"
+
+function pd() {
+    if [[ -z "$parf_flatpak_repos" && -z "$parf_per_user" ]]; then
+        echo "Flatpak not installed."
+        return 1
+    fi
+
+    local packages="$(
+        {
+            pacman -Qq
+            local flatpak_packages=""
+            if [ "$parf_per_user" -eq 1 ]; then
+                flatpak_packages=$(flatpak --user list --app --columns=name,application,origin)
+            else
+                flatpak_packages=$(flatpak --system list --app --columns=name,application,origin)
+            fi
+            awk -F'\t' '{printf "%s(%s)-%s\n", $1, $2, $3}' <(echo "$flatpak_packages")
+        } | fzf --multi --preview '
+            '"$(declare -p parf_flatpak_repos)"'
+            '"$(declare -f parf_fzf_preview)"'
+            '"$(declare -p parf_per_user)"'
+            parf_fzf_preview {}
+    ' | tr -d "*"
+    )"
+
+    if [ -z "$packages" ]; then
+        return
+    fi
+
+    local pacman_packages=()
+    local flatpak_packages=()
+
+    # Sort packages
+    while read -r package; do
+        local matched_repo=""
+        local matched_package=""
+        for repo in "${parf_flatpak_repos[@]}"; do
+            if [[ "$package" == *"-$repo" && "${#repo}" -gt "${#matched_repo}" ]]; then
+                matched_repo="$repo"
+                matched_package="${package%-"$repo"}"
+                matched_package="${matched_package##*\(}" # remove everything before last (
+                matched_package="${matched_package%%\)*}" # remove everything after last )
+            fi
+        done
+        if [[ -n "$matched_repo" ]]; then
+            flatpak_packages+=("$matched_repo $matched_package")
+        else
+            pacman_packages+=("$package")
+        fi
+    done <<<"$packages"
+
+    for repo in "${parf_flatpak_repos[@]}"; do
+        local to_uninstall=()
+        for entry in "${flatpak_packages[@]}"; do
+            if [[ "$repo" == "${entry%% *}" ]]; then
+                to_uninstall+=("${entry#* }")
+            fi
+        done
+        if [[ ${#to_uninstall[@]} -gt 0 ]]; then
+            echo "Flatpak: Uninstalling from $repo"
+            if [ "$parf_per_user" -eq 1 ]; then
+                flatpak --user uninstall "${to_uninstall[@]}"
+            else
+                flatpak --system uninstall "${to_uninstall[@]}"
+            fi
+
+            if [ "$?" -eq 0 ]; then
+                \rm -rf "$parf_cache_dir/$repo.cache"
+            fi
+        fi
+    done
+
+    if [[ ${#pacman_packages[@]} -gt 0 ]]; then
+        echo "Pacman: Uninstalling"
+        $AUR_HELPER --fm lf.sh -Rns "${pacman_packages[@]}"
+    fi
+}
+
+pd "$@"

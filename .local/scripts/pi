@@ -1,0 +1,70 @@
+#!/bin/bash
+
+this_path=$(dirname "$(realpath "$0")")
+
+. "$this_path/install_script.sh"
+
+pi() {
+    if [[ -z "$parf_flatpak_repos" && -z "$parf_per_user" ]]; then
+        echo "Flatpak not installed."
+        return 1
+    fi
+
+    local packages=$(parfs)
+
+    if [ -z "$packages" ]; then
+        return
+    fi
+
+    local pacman_packages=()
+    local flatpak_packages=()
+
+    # Sort packages
+    while read -r package; do
+        local matched_repo=""
+        local matched_package=""
+        for repo in "${parf_flatpak_repos[@]}"; do
+            if [[ "$package" == *"-$repo" && "${#repo}" -gt "${#matched_repo}" ]]; then
+                matched_repo="$repo"
+                matched_package="${package%-"$repo"}"
+                matched_package="${matched_package##*\(}" # remove everything before last (
+                matched_package="${matched_package%%\)*}" # remove everything after last )
+            fi
+        done
+        if [[ -n "$matched_repo" ]]; then
+            flatpak_packages+=("$matched_repo $matched_package")
+        else
+            pacman_packages+=("$package")
+        fi
+    done <<<"$packages"
+
+    # Install flatpak packages
+    for repo in "${parf_flatpak_repos[@]}"; do
+        local to_install=()
+        for entry in "${flatpak_packages[@]}"; do
+            if [[ "$repo" == "${entry%% *}" ]]; then
+                to_install+=("${entry#* }")
+            fi
+        done
+        if [[ ${#to_install[@]} -gt 0 ]]; then
+            echo "Flatpak: Installing from $repo"
+            if [ "$parf_per_user" -eq 1 ]; then
+                flatpak --user install "$repo" "${to_install[@]}"
+            else
+                flatpak --system install "$repo" "${to_install[@]}"
+            fi
+
+            if [ "$?" -eq 0 ]; then
+                \rm -rf "$parf_cache_dir/$repo.cache"
+            fi
+        fi
+    done
+
+    # Install pacman packages
+    if [[ ${#pacman_packages[@]} -gt 0 ]]; then
+        echo "Pacman: Installing"
+        $AUR_HELPER "$@" -S "${pacman_packages[@]}"
+    fi
+}
+
+pi "$@"
